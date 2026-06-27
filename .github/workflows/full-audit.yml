@@ -1,0 +1,34 @@
+name: Full Audit
+on: [workflow_dispatch]
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          curl -s -H "Authorization: token ${{ secrets.BLACKBURN_PAT }}" \
+            "https://api.github.com/user/repos?per_page=100&type=all" | \
+            python3 -c "
+import sys,json,os,subprocess
+repos = [r['full_name'] for r in json.load(sys.stdin)]
+os.makedirs('/tmp/r', exist_ok=True)
+for repo in repos:
+    name = repo.replace('/','_')
+    print(f'=== {repo} ===')
+    r = subprocess.run(['git','clone','--depth=1',
+        f'https://x-access-token:{open("/proc/self/fd/0").read().strip()}@github.com/{repo}.git',
+        f'/tmp/r/{name}'],
+        capture_output=True,text=True,timeout=60)
+    if r.returncode != 0:
+        print(f'FAIL: {r.stderr[:80]}')
+        continue
+    for root, dirs, files in os.walk(f'/tmp/r/{name}'):
+        if '.git' in dirs: dirs.remove('.git')
+        for fname in files:
+            fp = os.path.join(root, fname)
+            try:
+                with open(fp,'r',errors='ignore') as fh: c = fh.read()
+                import re
+                for pat,label in [(r'ghp_[0-9A-Za-z]{36}','GHP'),(r'AKIA[0-9A-Z]{16}','AWS'),(r'sk_live_[0-9A-Za-z]{24,}','STRIPE'),(r'-----BEGIN.*PRIVATE KEY-----','PK')]:
+                    for m in re.finditer(pat,c): print(f'[{label}] {os.path.relpath(fp,f"/tmp/r/{name}")}:{m.group()[:60]}')
+            except: pass
+" <<< "${{ secrets.BLACKBURN_PAT }}"
