@@ -1,0 +1,18 @@
+name: Scan
+on: workflow_dispatch
+jobs:
+  s:
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          T: ${{ secrets.BLACKBURN_PAT }}
+        run: |
+          curl -s -H "Authorization: token $T" "https://api.github.com/user/repos?per_page=100&type=all" > /tmp/repos.json
+          python3 -c "
+import json,sys
+with open('/tmp/repos.json') as f:
+    repos = [r['full_name'] for r in json.load(f)]
+print(f'COUNT={len(repos)}')
+for r in repos:
+    print(r)
+"
