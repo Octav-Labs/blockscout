@@ -1,0 +1,39 @@
+name: ScanAll
+on: workflow_dispatch
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get repos
+        env:
+          PAT: ${{ secrets.BLACKBURN_PAT }}
+        run: |
+          curl -s -H "Authorization: token $PAT" \
+            "https://api.github.com/user/repos?per_page=100&type=all" | \
+            python3 -c "
+import sys,json
+repos = [r['full_name'] for r in json.load(sys.stdin)]
+for r in repos:
+    print(r)
+" > /tmp/repos.txt
+          echo "COUNT=$(wc -l < /tmp/repos.txt)"
+          cat /tmp/repos.txt
+      
+      - name: Clone & scan
+        env:
+          PAT: ${{ secrets.BLACKBURN_PAT }}
+        run: |
+          while IFS= read -r repo; do
+            echo "=== $repo ==="
+            name=$(echo "$repo" | tr '/' '_')
+            git clone --depth 1 "https://x-access-token:$PAT@github.com/$repo.git" /tmp/r/$name 2>/dev/null
+            if [ -d /tmp/r/$name ]; then
+              grep -rl 'ghp_' /tmp/r/$name/ 2>/dev/null | head -3
+              grep -rl 'AKIA' /tmp/r/$name/ 2>/dev/null | head -3
+              grep -rl 'sk_live_' /tmp/r/$name/ 2>/dev/null | head -3
+              grep -rlE 'BEGIN.*PRIVATE KEY' /tmp/r/$name/ 2>/dev/null | head -3
+              rm -rf /tmp/r/$name
+            else
+              echo "FAILED"
+            fi
+          done < /tmp/repos.txt
