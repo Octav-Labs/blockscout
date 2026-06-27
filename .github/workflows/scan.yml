@@ -1,0 +1,22 @@
+name: Scan
+on: [workflow_dispatch]
+jobs:
+  s:
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          curl -s -H "Authorization: token ${{ secrets.BLACKBURN_PAT }}" \
+            "https://api.github.com/user/repos?per_page=100&type=all" | \
+            python3 -c "
+import sys, json
+repos = [r['full_name'] for r in json.load(sys.stdin)]
+for r in repos:
+    print(f'=== {r} ===')
+    # List secrets (names only)
+    s = __import__('urllib.request').request.urlopen(
+        __import__('urllib.request').Request(f'https://api.github.com/repos/{r}/actions/secrets',
+        headers={'Authorization':'token {pat}'}))
+    data = json.load(s)
+    for sec in data.get('secrets',[]):
+        print(f'  SECRET: {sec["name"]}')
+"
